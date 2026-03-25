@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev:http",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/index.ts", "--transport", "http"],
+      "port": 3100,
+      "autoPort": true
+    },
+    {
+      "name": "start:http",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dist/index.js", "--transport", "http"],
+      "port": 3100,
+      "autoPort": true
+    },
+    {
+      "name": "start (production)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dist/index.js", "--transport", "http"],
+      "port": 3100,
+      "autoPort": true
+    }
+  ]
+}
