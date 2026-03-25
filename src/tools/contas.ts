@@ -1,7 +1,40 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { schemaAdicionarConta, schemaRemoverConta } from "../schemas.js";
+import { schemaAdicionarConta, schemaAdicionarContaRapida, schemaRemoverConta } from "../schemas.js";
 import type { ConfigService } from "../services/config.js";
+import type { ConfigServidor } from "../types.js";
 import { z } from "zod";
+
+// Presets de provedores conhecidos
+const PRESETS_PROVEDORES: Record<string, { imap: ConfigServidor; smtp: ConfigServidor }> = {
+  gmail: {
+    imap: { host: "imap.gmail.com", port: 993, secure: true },
+    smtp: { host: "smtp.gmail.com", port: 587, secure: false },
+  },
+  outlook: {
+    imap: { host: "outlook.office365.com", port: 993, secure: true },
+    smtp: { host: "smtp.office365.com", port: 587, secure: false },
+  },
+  hotmail: {
+    imap: { host: "outlook.office365.com", port: 993, secure: true },
+    smtp: { host: "smtp.office365.com", port: 587, secure: false },
+  },
+  locaweb: {
+    imap: { host: "email-ssl.com.br", port: 993, secure: true },
+    smtp: { host: "email-ssl.com.br", port: 465, secure: true },
+  },
+  yahoo: {
+    imap: { host: "imap.mail.yahoo.com", port: 993, secure: true },
+    smtp: { host: "smtp.mail.yahoo.com", port: 465, secure: true },
+  },
+  icloud: {
+    imap: { host: "imap.mail.me.com", port: 993, secure: true },
+    smtp: { host: "smtp.mail.me.com", port: 587, secure: false },
+  },
+  zoho: {
+    imap: { host: "imap.zoho.com", port: 993, secure: true },
+    smtp: { host: "smtp.zoho.com", port: 465, secure: true },
+  },
+};
 
 export function registrarFerramentasContas(server: McpServer, config: ConfigService) {
   // --- Listar Contas ---
@@ -63,6 +96,48 @@ export function registrarFerramentasContas(server: McpServer, config: ConfigServ
         content: [{
           type: "text" as const,
           text: `Conta '${params.id}' (${params.nome}) adicionada com sucesso!\nEmail: ${params.usuario}\nIMAP: ${params.imapHost}:${params.imapPort}\nSMTP: ${params.smtpHost}:${params.smtpPort}`,
+        }],
+      };
+    }
+  );
+
+  // --- Adicionar Conta Rápida (com preset de provedor) ---
+  server.tool(
+    "email_adicionar_conta_rapida",
+    "Adiciona conta de email usando presets de provedores conhecidos. Basta informar o provedor (gmail, outlook, hotmail, locaweb, yahoo, icloud, zoho), email e senha. Para Gmail/Outlook/Yahoo/iCloud, use App Password.",
+    schemaAdicionarContaRapida.shape,
+    async (params) => {
+      const preset = PRESETS_PROVEDORES[params.provedor];
+      if (!preset) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Provedor '${params.provedor}' não reconhecido. Provedores suportados: ${Object.keys(PRESETS_PROVEDORES).join(", ")}. Para outros provedores, use email_adicionar_conta com configuração manual.`,
+          }],
+          isError: true,
+        };
+      }
+
+      const emailUser = params.usuario;
+      const localPart = emailUser.split("@")[0] ?? emailUser;
+      const id = params.id ?? `${params.provedor}-${localPart}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+      const nome = params.nome ?? `${params.provedor.charAt(0).toUpperCase() + params.provedor.slice(1)} ${localPart}`;
+
+      config.adicionarConta({
+        id,
+        nome,
+        imap: { ...preset.imap },
+        smtp: { ...preset.smtp },
+        auth: {
+          user: emailUser,
+          pass: params.senha,
+        },
+      });
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Conta '${id}' (${nome}) adicionada com sucesso!\nEmail: ${emailUser}\nProvedor: ${params.provedor}\nIMAP: ${preset.imap.host}:${preset.imap.port}\nSMTP: ${preset.smtp.host}:${preset.smtp.port}`,
         }],
       };
     }

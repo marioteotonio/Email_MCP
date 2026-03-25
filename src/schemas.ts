@@ -36,6 +36,14 @@ export const schemaAdicionarConta = z.object({
   senha: z.string().describe("Senha ou App Password"),
 }).strict();
 
+export const schemaAdicionarContaRapida = z.object({
+  provedor: z.enum(["gmail", "outlook", "hotmail", "locaweb", "yahoo", "icloud", "zoho"]).describe("Provedor de email (gmail, outlook, hotmail, locaweb, yahoo, icloud, zoho)"),
+  usuario: z.string().describe("Endereço de email completo (ex: 'mario@gmail.com')"),
+  senha: z.string().describe("Senha ou App Password"),
+  id: z.string().optional().describe("ID personalizado (opcional — gerado automaticamente se omitido)"),
+  nome: z.string().optional().describe("Nome descritivo (opcional — gerado automaticamente se omitido)"),
+}).strict();
+
 export const schemaRemoverConta = z.object({
   contaId: z.string().describe("ID da conta a remover"),
   confirmar: z.boolean().describe("Confirmação de remoção (deve ser true)"),
