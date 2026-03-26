@@ -41,7 +41,7 @@ async function main() {
 }
 
 async function iniciarStdio() {
-  const server = criarServidor();
+  const server = await criarServidor();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Email MCP Server iniciado (stdio)");
@@ -88,7 +88,7 @@ async function iniciarHttp(port: number) {
     requireBearerAuth({ verifier: oauthProvider }),
     async (req, res) => {
       try {
-        const server = criarServidor();
+        const server = await criarServidor();
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined, // stateless
         });

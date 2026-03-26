@@ -7,15 +7,15 @@ import { registrarFerramentasEnviar } from "./tools/enviar.js";
 import { registrarFerramentasOrganizar } from "./tools/organizar.js";
 import { registrarFerramentasFiltros } from "./tools/filtros.js";
 
-export function criarServidor(): McpServer {
+export async function criarServidor(): Promise<McpServer> {
   const server = new McpServer({
     name: "email-mcp-server",
     version: "1.0.0",
   });
 
-  const config = new ConfigService();
+  const config = await ConfigService.create();
 
-  // Registrar todas as 21 ferramentas
+  // Registrar todas as ferramentas
   registrarFerramentasContas(server, config);
   registrarFerramentasPastas(server, config);
   registrarFerramentasEmails(server, config);

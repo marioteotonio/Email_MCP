@@ -73,7 +73,7 @@ export function registrarFerramentasContas(server: McpServer, config: ConfigServ
     "Adiciona uma nova conta de email. Suporta Gmail (imap.gmail.com), Outlook (outlook.office365.com), Locaweb e qualquer provedor IMAP/SMTP. Para Gmail, use uma 'Senha de App' gerada nas configurações de segurança do Google.",
     schemaAdicionarConta.shape,
     async (params) => {
-      config.adicionarConta({
+      await config.adicionarConta({
         id: params.id,
         nome: params.nome,
         imap: {
@@ -123,7 +123,7 @@ export function registrarFerramentasContas(server: McpServer, config: ConfigServ
       const id = params.id ?? `${params.provedor}-${localPart}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
       const nome = params.nome ?? `${params.provedor.charAt(0).toUpperCase() + params.provedor.slice(1)} ${localPart}`;
 
-      config.adicionarConta({
+      await config.adicionarConta({
         id,
         nome,
         imap: { ...preset.imap },
@@ -159,7 +159,7 @@ export function registrarFerramentasContas(server: McpServer, config: ConfigServ
       }
 
       const conta = config.obterContaOuErro(params.contaId);
-      config.removerConta(params.contaId);
+      await config.removerConta(params.contaId);
 
       return {
         content: [{

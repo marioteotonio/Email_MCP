@@ -1,7 +1,11 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import type { ContaEmail, FiltroEmail, ConfiguracaoServidor } from "../types.js";
+import {
+  type PersistenceBackend,
+  FilePersistence,
+  UpstashPersistence,
+} from "./persistence.js";
 
 const CONFIG_DEFAULT: ConfiguracaoServidor = {
   contas: [],
@@ -9,63 +13,53 @@ const CONFIG_DEFAULT: ConfiguracaoServidor = {
 };
 
 export class ConfigService {
-  private configPath: string;
   private config: ConfiguracaoServidor;
+  private backend: PersistenceBackend | null;
 
-  constructor() {
-    this.configPath =
-      process.env.EMAIL_MCP_CONFIG ||
-      join(homedir(), ".email-mcp", "config.json");
-
-    this.config = this.carregar();
+  private constructor(config: ConfiguracaoServidor, backend: PersistenceBackend | null) {
+    this.config = config;
+    this.backend = backend;
   }
 
-  // --- Leitura / Escrita ---
+  static async create(): Promise<ConfigService> {
+    const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+    const jsonEnv = process.env.EMAIL_MCP_CONFIG_JSON;
 
-  private carregar(): ConfiguracaoServidor {
-    try {
-      // Suporte a config via env var (para deploy em cloud com filesystem efêmero)
-      const jsonEnv = process.env.EMAIL_MCP_CONFIG_JSON;
-      if (jsonEnv) {
+    // Priority 1: Upstash Redis (persistent cloud storage)
+    if (upstashUrl && upstashToken) {
+      const backend = new UpstashPersistence(upstashUrl, upstashToken);
+      const config = await backend.load();
+      console.error("ConfigService: usando Upstash Redis para persistência");
+      return new ConfigService(config ?? { ...CONFIG_DEFAULT }, backend);
+    }
+
+    // Priority 2: JSON env var (read-only, no persistence)
+    if (jsonEnv) {
+      try {
         const parsed = JSON.parse(jsonEnv) as Partial<ConfiguracaoServidor>;
-        return {
+        const config = {
           contas: parsed.contas ?? [],
           filtros: parsed.filtros ?? [],
         };
+        console.error("ConfigService: usando EMAIL_MCP_CONFIG_JSON (somente leitura)");
+        return new ConfigService(config, null);
+      } catch {
+        // fall through
       }
-
-      if (!existsSync(this.configPath)) {
-        this.criarConfigPadrao();
-        return { ...CONFIG_DEFAULT };
-      }
-      const raw = readFileSync(this.configPath, "utf-8");
-      const parsed = JSON.parse(raw) as Partial<ConfiguracaoServidor>;
-      return {
-        contas: parsed.contas ?? [],
-        filtros: parsed.filtros ?? [],
-      };
-    } catch {
-      return { ...CONFIG_DEFAULT };
     }
+
+    // Priority 3: Local file
+    const filePath =
+      process.env.EMAIL_MCP_CONFIG ||
+      join(homedir(), ".email-mcp", "config.json");
+    const backend = new FilePersistence(filePath);
+    const config = await backend.load();
+    console.error(`ConfigService: usando arquivo local ${filePath}`);
+    return new ConfigService(config ?? { ...CONFIG_DEFAULT }, backend);
   }
 
-  private salvar(): void {
-    const dir = dirname(this.configPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), "utf-8");
-  }
-
-  private criarConfigPadrao(): void {
-    const dir = dirname(this.configPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(this.configPath, JSON.stringify(CONFIG_DEFAULT, null, 2), "utf-8");
-  }
-
-  // --- Contas ---
+  // --- Leitura (sync — lê da memória) ---
 
   obterContas(): ContaEmail[] {
     return this.config.contas;
@@ -85,27 +79,6 @@ export class ConfigService {
     return conta;
   }
 
-  adicionarConta(conta: ContaEmail): void {
-    if (this.obterConta(conta.id)) {
-      throw new Error(`Já existe uma conta com o ID '${conta.id}'.`);
-    }
-    this.config.contas.push(conta);
-    this.salvar();
-  }
-
-  removerConta(id: string): void {
-    const idx = this.config.contas.findIndex((c) => c.id === id);
-    if (idx === -1) {
-      throw new Error(`Conta '${id}' não encontrada.`);
-    }
-    this.config.contas.splice(idx, 1);
-    // Remove filtros associados
-    this.config.filtros = this.config.filtros.filter((f) => f.contaId !== id);
-    this.salvar();
-  }
-
-  // --- Filtros ---
-
   obterFiltros(contaId?: string): FiltroEmail[] {
     if (contaId) {
       return this.config.filtros.filter((f) => f.contaId === contaId);
@@ -113,18 +86,44 @@ export class ConfigService {
     return this.config.filtros;
   }
 
-  adicionarFiltro(filtro: FiltroEmail): void {
-    this.obterContaOuErro(filtro.contaId);
-    this.config.filtros.push(filtro);
-    this.salvar();
+  // --- Escrita (async — persiste remotamente) ---
+
+  private async salvar(): Promise<void> {
+    if (this.backend) {
+      await this.backend.save(this.config);
+    }
   }
 
-  removerFiltro(id: string): void {
+  async adicionarConta(conta: ContaEmail): Promise<void> {
+    if (this.obterConta(conta.id)) {
+      throw new Error(`Já existe uma conta com o ID '${conta.id}'.`);
+    }
+    this.config.contas.push(conta);
+    await this.salvar();
+  }
+
+  async removerConta(id: string): Promise<void> {
+    const idx = this.config.contas.findIndex((c) => c.id === id);
+    if (idx === -1) {
+      throw new Error(`Conta '${id}' não encontrada.`);
+    }
+    this.config.contas.splice(idx, 1);
+    this.config.filtros = this.config.filtros.filter((f) => f.contaId !== id);
+    await this.salvar();
+  }
+
+  async adicionarFiltro(filtro: FiltroEmail): Promise<void> {
+    this.obterContaOuErro(filtro.contaId);
+    this.config.filtros.push(filtro);
+    await this.salvar();
+  }
+
+  async removerFiltro(id: string): Promise<void> {
     const idx = this.config.filtros.findIndex((f) => f.id === id);
     if (idx === -1) {
       throw new Error(`Filtro '${id}' não encontrado.`);
     }
     this.config.filtros.splice(idx, 1);
-    this.salvar();
+    await this.salvar();
   }
 }

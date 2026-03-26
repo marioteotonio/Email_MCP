@@ -47,7 +47,7 @@ export function registrarFerramentasFiltros(server: McpServer, config: ConfigSer
         ativo: true,
       };
 
-      config.adicionarFiltro(filtro);
+      await config.adicionarFiltro(filtro);
 
       return {
         content: [{
@@ -73,7 +73,7 @@ export function registrarFerramentasFiltros(server: McpServer, config: ConfigSer
         };
       }
 
-      config.removerFiltro(params.filtroId);
+      await config.removerFiltro(params.filtroId);
 
       return {
         content: [{
